@@ -1,18 +1,69 @@
-use std::fs::{self, Metadata};
+use std::fs::{self, File, Metadata};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process;
+
+const QUIET: bool = false;
 
 fn die<S: AsRef<str>>(msg: S) -> ! {
     eprintln!("Fatal: {}", msg.as_ref());
     process::exit(1);
 }
 
+fn copy_with_progress<P, Q, F>(
+    source: P,
+    dest: Q,
+    buffer_size: usize,
+    progress_hook: F,
+    dexist: &bool,
+    ddir: &bool) -> io::Result<u64>
+where
+    P: AsRef<Path>,
+    Q: AsRef<Path>,
+    F: Fn(u64, u64),
+{
+    let source_path = source.as_ref();
+    let mut dest_path = dest.as_ref().to_path_buf();
+
+    // If the destination exists and is a directory, we should append the
+    // original filename to the path.
+    if *dexist && *ddir {
+        if let Some(filename) = source_path.file_name() {
+            dest_path = dest_path.join(filename);
+        } else {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "source has no filename"));
+        }
+    }
+
+    println!("copying {} to {}", source_path.display(), dest_path.display());
+
+    let mut srcfile = File::open(source_path)?;
+    let mut dstfile = File::create(&dest_path)?;
+    let mut buffer = vec![0u8; buffer_size];
+    let mut total_bytes = 0u64;
+
+    let file_size = srcfile.metadata()?.len();
+
+    loop {
+        let bytes_read = srcfile.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        dstfile.write_all(&buffer[..bytes_read])?;
+        total_bytes += bytes_read as u64;
+
+        progress_hook(total_bytes, file_size);
+    }
+    Ok(total_bytes)
+}
+
 // This is a primitive that will copy one file
-fn do_copy(source: &str, dest: &str, dexist: &bool, ddir: &bool) {
+fn quiet_copy(source: &str, dest: &str, dexist: &bool, ddir: &bool) -> io::Result<u64>
+{
     let dest_string = String::from(dest);
     let source_string = String::from(source);
     let mut dbuf = PathBuf::from(&dest_string);
-    let mut sbuf = PathBuf::from(&source_string);
+    let sbuf = PathBuf::from(&source_string);
     // If the destination exists and is a directory, we should append the
     // original filename to the path.
     if *dexist && *ddir {
@@ -23,12 +74,16 @@ fn do_copy(source: &str, dest: &str, dexist: &bool, ddir: &bool) {
             None => { die("don't know how to handle this source"); }
         }
     }
-    println!("need to copy {} to {}", sbuf.display(), dbuf.display());
+    println!("copying {} to {}", sbuf.display(), dbuf.display());
 
     match fs::copy(sbuf, dbuf) {
-        Ok(_) => { println!("good copy"); },
-        Err(e) => { die(format!("copy failed: {}", e)) }
+        Ok(bytes_copied) => { return Ok(bytes_copied); }
+        Err(e) => { return Err(e); }
     }
+}
+
+fn progress(current: u64, total: u64) {
+    println!("copied {} of {}", current, total);
 }
 
 fn main() {
@@ -38,7 +93,7 @@ fn main() {
     let dest = std::env::args().nth(2).expect("No dest given");
 
     let source_exists = fs::exists(&source);
-    let mut source_exists_b: bool = false;
+    let source_exists_b: bool;
     match source_exists {
         Ok(true) => { source_exists_b = true; },
         Ok(false) => { source_exists_b = false; },
@@ -61,7 +116,7 @@ fn main() {
     // Does the destination exist?
     let dest_exists = fs::exists(&dest);
 
-    let mut dest_exists_b: bool = false;
+    let dest_exists_b: bool;
     match dest_exists {
         Ok(true) => { dest_exists_b = true; },
         Ok(false) => { dest_exists_b = false; },
@@ -81,5 +136,15 @@ fn main() {
         println!("destination does not exist");
     }
 
-    do_copy(&source, &dest, &dest_exists_b, &ddir);
+    if QUIET {
+        match quiet_copy(&source, &dest, &dest_exists_b, &ddir) {
+            Ok(bytes_copied) => { println!("copied {} bytes", bytes_copied); }
+            Err(e) => { die(format!("error in copy: {}", e)); }
+        }
+    } else {
+        match copy_with_progress(&source, &dest, 4096, &progress, &dest_exists_b, &ddir) {
+            Ok(bytes_copied) => { println!("copied {} bytes", bytes_copied); }
+            Err(e) => { die(format!("error in copy: {}", e)); }
+        }
+    }
 }

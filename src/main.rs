@@ -83,7 +83,15 @@ fn quiet_copy(source: &str, dest: &str, dexist: &bool, ddir: &bool) -> io::Resul
 }
 
 fn progress(current: u64, total: u64) {
-    println!("copied {} of {}", current, total);
+    let percentage: f64 = ( current as f64 / total as f64 ) * 100.0;
+    print!("                                                 ");
+    print!("\r");
+    print!("copied {} bytes of {} total: {:.2}%", current, total, percentage);
+    if percentage >= 100.0 {
+        println!();
+    }
+    // flush
+    io::stdout().flush().unwrap();
 }
 
 fn main() {
@@ -138,12 +146,12 @@ fn main() {
 
     if QUIET {
         match quiet_copy(&source, &dest, &dest_exists_b, &ddir) {
-            Ok(bytes_copied) => { println!("copied {} bytes", bytes_copied); }
+            Ok(_) => { println!("done"); }
             Err(e) => { die(format!("error in copy: {}", e)); }
         }
     } else {
-        match copy_with_progress(&source, &dest, 4096, &progress, &dest_exists_b, &ddir) {
-            Ok(bytes_copied) => { println!("copied {} bytes", bytes_copied); }
+        match copy_with_progress(&source, &dest, 40960, &progress, &dest_exists_b, &ddir) {
+            Ok(_) => { println!("done"); }
             Err(e) => { die(format!("error in copy: {}", e)); }
         }
     }

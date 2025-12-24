@@ -2,8 +2,21 @@ use std::fs::{self, File, Metadata};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process;
+use clap::Parser;
 
-const QUIET: bool = false;
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    // quiet option
+    #[arg(short, long, default_value_t = true)]
+    quiet: bool,
+
+    /// Number of times to greet
+    #[arg(short, long)]
+    progress: bool,
+
+    files: Vec<String>, // captures all positional arguments
+}
 
 fn die<S: AsRef<str>>(msg: S) -> ! {
     eprintln!("Fatal: {}", msg.as_ref());
@@ -96,6 +109,11 @@ fn progress(current: u64, total: u64) {
 
 fn main() {
 
+    let args = Args::parse();
+    if args.files.len() < 2 {
+        eprintln!("Usage: cpx [--quiet|--progress] <source> <dest>");
+        std::process::exit(1);
+    }
     // FIXME: handle panics here more nicely
     let source = std::env::args().nth(1).expect("No source given");
     let dest = std::env::args().nth(2).expect("No dest given");
@@ -116,7 +134,7 @@ fn main() {
             die("source must be a file at this time");
         }
     } else {
-        die ("source does not exist");
+        die(format!("source does not exist: {}", &source));
     }
 
     // The destination should be a pre-existing directory, or a file that may
@@ -140,11 +158,9 @@ fn main() {
             println!("{} is a directory", dest);
             ddir = true;
         }
-    } else {
-        println!("destination does not exist");
     }
 
-    if QUIET {
+    if args.quiet {
         match quiet_copy(&source, &dest, &dest_exists_b, &ddir) {
             Ok(_) => { println!("done"); }
             Err(e) => { die(format!("error in copy: {}", e)); }

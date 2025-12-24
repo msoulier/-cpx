@@ -124,28 +124,9 @@ fn main() {
         std::process::exit(1);
     }
 
-    let source = args.files.get(0).unwrap();
-    let dest = args.files.get(1).unwrap();
+    let nsfiles = args.files.len() - 1;
 
-    let source_exists = fs::exists(&source);
-    let source_exists_b: bool;
-    match source_exists {
-        Ok(true) => { source_exists_b = true; },
-        Ok(false) => { source_exists_b = false; },
-        Err(_) => { die("error attempting to check source file existence"); }
-    }
-
-    if source_exists_b {
-        // Is it a file? We don't copy anything else yet.
-        println!("source exists");
-        let attr: Metadata = fs::metadata(&source).unwrap();
-        if !attr.is_file() {
-            die("source must be a file at this time");
-        }
-    } else {
-        die(format!("source does not exist: {}", &source));
-    }
-
+    let dest = args.files.get(args.files.len()-1).unwrap();
     // The destination should be a pre-existing directory, or a file that may
     // or may not exist.
     // Does the destination exist?
@@ -166,18 +147,45 @@ fn main() {
         if attr.is_dir() {
             println!("{} is a directory", dest);
             ddir = true;
+        } else {
+            if nsfiles > 1 {
+                die("multiple source files require a directory as destination");
+            }
         }
     }
 
-    if quiet {
-        match quiet_copy(&source, &dest, &dest_exists_b, &ddir) {
-            Ok(_) => { println!("done"); }
-            Err(e) => { die(format!("error in copy: {}", e)); }
+    for source in &args.files[0..&args.files.len()-1] {
+        println!("looping on source {}", source);
+
+        let source_exists = fs::exists(&source);
+        let source_exists_b: bool;
+        match source_exists {
+            Ok(true) => { source_exists_b = true; },
+            Ok(false) => { source_exists_b = false; },
+            Err(_) => { die("error attempting to check source file existence"); }
         }
-    } else {
-        match copy_with_progress(&source, &dest, 40960, &progress_hook, &dest_exists_b, &ddir) {
-            Ok(_) => { println!("done"); }
-            Err(e) => { die(format!("error in copy: {}", e)); }
+
+        if source_exists_b {
+            // Is it a file? We don't copy anything else yet.
+            println!("source exists");
+            let attr: Metadata = fs::metadata(&source).unwrap();
+            if !attr.is_file() {
+                die("source must be a file at this time");
+            }
+        } else {
+            die(format!("source does not exist: {}", &source));
+        }
+
+        if quiet {
+            match quiet_copy(&source, &dest, &dest_exists_b, &ddir) {
+                Ok(_) => { println!("done"); }
+                Err(e) => { die(format!("error in copy: {}", e)); }
+            }
+        } else {
+            match copy_with_progress(&source, &dest, 40960, &progress_hook, &dest_exists_b, &ddir) {
+                Ok(_) => { println!("done"); }
+                Err(e) => { die(format!("error in copy: {}", e)); }
+            }
         }
     }
 }

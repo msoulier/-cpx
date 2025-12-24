@@ -8,7 +8,7 @@ use clap::Parser;
 #[command(version, about, long_about = None)]
 struct Args {
     // quiet option
-    #[arg(short, long, default_value_t = true)]
+    #[arg(short, long)]
     quiet: bool,
 
     /// Number of times to greet
@@ -95,7 +95,7 @@ fn quiet_copy(source: &str, dest: &str, dexist: &bool, ddir: &bool) -> io::Resul
     }
 }
 
-fn progress(current: u64, total: u64) {
+fn progress_hook(current: u64, total: u64) {
     let percentage: f64 = ( current as f64 / total as f64 ) * 100.0;
     print!("                                                 ");
     print!("\r");
@@ -108,15 +108,24 @@ fn progress(current: u64, total: u64) {
 }
 
 fn main() {
-
     let args = Args::parse();
     if args.files.len() < 2 {
         eprintln!("Usage: cpx [--quiet|--progress] <source> <dest>");
         std::process::exit(1);
     }
-    // FIXME: handle panics here more nicely
-    let source = std::env::args().nth(1).expect("No source given");
-    let dest = std::env::args().nth(2).expect("No dest given");
+    let mut quiet = args.quiet;
+    let progress = args.progress;
+    if !quiet && !progress {
+        quiet = true;
+    }
+    if quiet && progress {
+        eprintln!("ERROR: The --quiet and --progress options are mutually exclusive");
+        eprintln!("Usage: cpx [--quiet|--progress] <source> <dest>");
+        std::process::exit(1);
+    }
+
+    let source = args.files.get(0).unwrap();
+    let dest = args.files.get(1).unwrap();
 
     let source_exists = fs::exists(&source);
     let source_exists_b: bool;
@@ -160,13 +169,13 @@ fn main() {
         }
     }
 
-    if args.quiet {
+    if quiet {
         match quiet_copy(&source, &dest, &dest_exists_b, &ddir) {
             Ok(_) => { println!("done"); }
             Err(e) => { die(format!("error in copy: {}", e)); }
         }
     } else {
-        match copy_with_progress(&source, &dest, 40960, &progress, &dest_exists_b, &ddir) {
+        match copy_with_progress(&source, &dest, 40960, &progress_hook, &dest_exists_b, &ddir) {
             Ok(_) => { println!("done"); }
             Err(e) => { die(format!("error in copy: {}", e)); }
         }

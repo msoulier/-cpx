@@ -3,37 +3,53 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 use clap::Parser;
+use indicatif::{ProgressBar,ProgressStyle};
 
 ////////////////////////////////////////////////////
 /// The progress indicator.
 trait Progress {
-    fn tick(&mut self, current: u64, total: u64);
+    fn init(&mut self, total: u64);
+    fn tick(&mut self, current: u64);
+    fn finish(&mut self);
 }
 
 struct ProgressIndicator {
     current: u64,
     total: u64,
+    bar: ProgressBar,
+    oldcurrent: u64,
+    percentage: f64,
 }
 
 impl Progress for ProgressIndicator {
-    fn tick (&mut self, current: u64, total: u64) {
-        self.current = current;
+    fn init(&mut self, total: u64) {
         self.total = total;
-        let percentage: f64 = ( current as f64 / total as f64 ) * 100.0;
-        print!("                                                 ");
-        print!("\r");
-        print!("copied {} bytes of {} total: {:.2}%", current, total, percentage);
-        if percentage >= 100.0 {
-            println!();
-        }
+        let bar = ProgressBar::new(total);
+        bar.set_style(ProgressStyle::with_template("[{bytes_per_sec}] [ETA {eta}] {bar:40.cyan/blue} {binary_bytes} of {binary_total_bytes} {percent}% Complete")
+            .unwrap()
+            .progress_chars("##-"));
+        self.bar = bar;
+    }
+
+    fn tick (&mut self, current: u64) {
+        self.current = current;
+        self.percentage = ( self.current as f64 / self.total as f64 ) * 100.0;
         // flush
-        io::stdout().flush().unwrap();
+        //io::stdout().flush().unwrap();
+        self.bar.inc(self.current-self.oldcurrent);
+        self.oldcurrent = self.current;
+    }
+
+    fn finish(&mut self) {
+        self.bar.finish();
     }
 }
 
 impl ProgressIndicator {
     fn new(current: u64, total: u64) -> Self {
-        ProgressIndicator { current, total }
+        // FIXME: we're going to throw this object away in init - need to refactor
+        let bar = ProgressBar::new(total);
+        ProgressIndicator { current: current, total: total, bar: bar, oldcurrent: 0, percentage: 0.0 }
     }
 }
 
@@ -95,6 +111,7 @@ where
     let mut total_bytes = 0u64;
 
     let file_size = srcfile.metadata()?.len();
+    progress_hook.init(file_size);
 
     loop {
         let bytes_read = srcfile.read(&mut buffer)?;
@@ -104,8 +121,9 @@ where
         dstfile.write_all(&buffer[..bytes_read])?;
         total_bytes += bytes_read as u64;
 
-        progress_hook.tick(total_bytes, file_size);
+        progress_hook.tick(total_bytes);
     }
+    progress_hook.finish();
     Ok(total_bytes)
 }
 
@@ -195,7 +213,6 @@ fn main() {
 
         if source_exists_b {
             // Is it a file? We don't copy anything else yet.
-            println!("source exists");
             let attr: Metadata = fs::metadata(&source).unwrap();
             if !attr.is_file() {
                 die("source must be a file at this time");

@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process;
 use clap::Parser;
 
+////////////////////////////////////////////////////
+/// The progress indicator.
 trait Progress {
     fn tick(&mut self, current: u64, total: u64);
 }
@@ -35,6 +37,9 @@ impl ProgressIndicator {
     }
 }
 
+////////////////////////////////////////////////////
+/// Command-line options.
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -48,6 +53,9 @@ struct Args {
 
     files: Vec<String>, // captures all positional arguments
 }
+
+////////////////////////////////////////////////////
+/// The main program.
 
 fn die<S: AsRef<str>>(msg: S) -> ! {
     eprintln!("Fatal: {}", msg.as_ref());

@@ -4,6 +4,37 @@ use std::path::{Path, PathBuf};
 use std::process;
 use clap::Parser;
 
+trait Progress {
+    fn tick(&mut self, current: u64, total: u64);
+}
+
+struct ProgressIndicator {
+    current: u64,
+    total: u64,
+}
+
+impl Progress for ProgressIndicator {
+    fn tick (&mut self, current: u64, total: u64) {
+        self.current = current;
+        self.total = total;
+        let percentage: f64 = ( current as f64 / total as f64 ) * 100.0;
+        print!("                                                 ");
+        print!("\r");
+        print!("copied {} bytes of {} total: {:.2}%", current, total, percentage);
+        if percentage >= 100.0 {
+            println!();
+        }
+        // flush
+        io::stdout().flush().unwrap();
+    }
+}
+
+impl ProgressIndicator {
+    fn new(current: u64, total: u64) -> Self {
+        ProgressIndicator { current, total }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -27,13 +58,13 @@ fn copy_with_progress<P, Q, F>(
     source: P,
     dest: Q,
     buffer_size: usize,
-    progress_hook: F,
+    mut progress_hook: F,
     dexist: &bool,
     ddir: &bool) -> io::Result<u64>
 where
     P: AsRef<Path>,
     Q: AsRef<Path>,
-    F: Fn(u64, u64),
+    F: Progress,
 {
     let source_path = source.as_ref();
     let mut dest_path = dest.as_ref().to_path_buf();
@@ -65,7 +96,7 @@ where
         dstfile.write_all(&buffer[..bytes_read])?;
         total_bytes += bytes_read as u64;
 
-        progress_hook(total_bytes, file_size);
+        progress_hook.tick(total_bytes, file_size);
     }
     Ok(total_bytes)
 }
@@ -95,17 +126,6 @@ fn quiet_copy(source: &str, dest: &str, dexist: &bool, ddir: &bool) -> io::Resul
     }
 }
 
-fn progress_hook(current: u64, total: u64) {
-    let percentage: f64 = ( current as f64 / total as f64 ) * 100.0;
-    print!("                                                 ");
-    print!("\r");
-    print!("copied {} bytes of {} total: {:.2}%", current, total, percentage);
-    if percentage >= 100.0 {
-        println!();
-    }
-    // flush
-    io::stdout().flush().unwrap();
-}
 
 fn main() {
     let args = Args::parse();
@@ -182,7 +202,8 @@ fn main() {
                 Err(e) => { die(format!("error in copy: {}", e)); }
             }
         } else {
-            match copy_with_progress(&source, &dest, 40960, &progress_hook, &dest_exists_b, &ddir) {
+            let p = ProgressIndicator::new(0, 0);
+            match copy_with_progress(&source, &dest, 40960, p, &dest_exists_b, &ddir) {
                 Ok(_) => { println!("done"); }
                 Err(e) => { die(format!("error in copy: {}", e)); }
             }

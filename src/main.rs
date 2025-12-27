@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 use clap::Parser;
 use indicatif::{ProgressBar,ProgressStyle};
+use clonetree::{clone_tree,Options};
 
 ////////////////////////////////////////////////////
 /// The progress indicator.
@@ -76,6 +77,18 @@ struct Args {
 fn die<S: AsRef<str>>(msg: S) -> ! {
     eprintln!("Fatal: {}", msg.as_ref());
     process::exit(1);
+}
+
+fn progress_copy_dir(_source: &str, _dest: &str) -> Result<(), Box<dyn std::error::Error>>
+{
+    die("progress copy not implemented yet");
+}
+
+fn quiet_copy_dir(source: &str, dest: &str) -> Result<(), Box<dyn std::error::Error>>
+{
+    let options = Options::new();
+    clone_tree(source, dest, &options)?;
+    Ok(())
 }
 
 fn copy_with_progress<P, Q, F>(
@@ -188,10 +201,8 @@ fn main() {
     let mut ddir: bool = false;
 
     if dest_exists_b {
-        println!("destination exists");
         let attr = fs::metadata(&dest).unwrap();
         if attr.is_dir() {
-            println!("{} is a directory", dest);
             ddir = true;
         } else {
             if nsfiles > 1 {
@@ -200,9 +211,13 @@ fn main() {
         }
     }
 
-    for source in &args.files[0..&args.files.len()-1] {
-        println!("looping on source {}", source);
+    // With multiple sources, destination must be a directory.
+    if &args.files.len()-1 > 1 && !ddir {
+        die("with multiple sources, the destination must be a directory");
+    }
 
+    // Loop over all sources before copying anything. Rules to enforce.
+    for source in &args.files[0..&args.files.len()-1] {
         let source_exists = fs::exists(&source);
         let source_exists_b: bool;
         match source_exists {
@@ -215,12 +230,18 @@ fn main() {
             // Is it a file? We don't copy anything else yet.
             let attr: Metadata = fs::metadata(&source).unwrap();
             if !attr.is_file() {
-                die("source must be a file at this time");
+                if quiet {
+                    let _ = quiet_copy_dir(source, dest);
+                } else {
+                    let _ = progress_copy_dir(source, dest);
+                }
             }
         } else {
             die(format!("source does not exist: {}", &source));
         }
+    }
 
+    for source in &args.files[0..&args.files.len()-1] {
         if quiet {
             match quiet_copy(&source, &dest, &dest_exists_b, &ddir) {
                 Ok(_) => { println!("done"); }
